@@ -6,6 +6,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
+
 import redis.asyncio as redis  # Import redis.asyncio
 from telegram import (InlineKeyboardButton, InlineKeyboardMarkup,
                       KeyboardButton, ReplyKeyboardMarkup, Update)
@@ -16,7 +17,9 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
 # --- Redis Configuration ---
 REDIS_MONITOR_KEY = "restaurant_monitors"
 REDIS_USER_LOCATIONS_KEY = "user_locations"
-REDIS_MAX_MONITOR_TTL = int(timedelta(hours=12).total_seconds())  # 12 hours in seconds
+REDIS_MAX_MONITOR_TTL = int(
+    timedelta(hours=12).total_seconds())  # 12 hours in seconds
+
 
 class Constants:
     # Default coordinates for Israel
@@ -34,8 +37,10 @@ class Constants:
     MAX_MESSAGE_LENGTH = 4000
     # API endpoints
     GEOCODING_URL = "https://nominatim.openstreetmap.org/search"  # Removed trailing space
-    REVERSE_GEOCODING_URL = "https://nominatim.openstreetmap.org/reverse"  # Removed trailing space
-    WOLT_API_URL = "https://restaurant-api.wolt.com/v1/pages/search"  # Removed trailing space
+    # Removed trailing space
+    REVERSE_GEOCODING_URL = "https://nominatim.openstreetmap.org/reverse"
+    # Removed trailing space
+    WOLT_API_URL = "https://restaurant-api.wolt.com/v1/pages/search"
     # User agent for API requests
     USER_AGENT = "Firefox/102.0"
 
@@ -43,14 +48,17 @@ class Constants:
 class RestaurantMonitor:
     def __init__(self):
         self.monitoring_tasks: Dict[str, asyncio.Task] = {}
-        self.user_monitors: Dict[int, Set[str]] = {} # In-memory cache for active users
-        self.monitoring_users: Dict[str, Set[int]] = {} # In-memory cache for active venues
-        self.venue_coordinates: Dict[str, tuple] = {} # In-memory cache for active venues
+        # In-memory cache for active users
+        self.user_monitors: Dict[int, Set[str]] = {}
+        # In-memory cache for active venues
+        self.monitoring_users: Dict[str, Set[int]] = {}
+        # In-memory cache for active venues
+        self.venue_coordinates: Dict[str, tuple] = {}
         self.monitoring_interval = Constants.MONITORING_INTERVAL
         self.bot_instance = None  # Will be set when bot starts
         self.user_locations: Dict[int, tuple] = {}  # In-memory cache
         # user_id -> location_name
-        self.user_location_names: Dict[int, str] = {} # In-memory cache
+        self.user_location_names: Dict[int, str] = {}  # In-memory cache
 
         # --- Redis Initialization ---
         redis_url_str = os.environ.get('REDIS_URL_STR')
@@ -63,12 +71,14 @@ class RestaurantMonitor:
             # Reconstruct URL with password if needed, typically like redis://:password@host:port/db
             # If REDIS_URL_STR is already in format redis://host:port, this adds the password
             redis_url_with_password = f"{parsed_url.scheme}://:{redis_password}@{parsed_url.host}:{parsed_url.port}/{parsed_url.db if parsed_url.db is not None else ''}"
-            self.redis_pool = redis.from_url(redis_url_with_password, decode_responses=True)
+            self.redis_pool = redis.from_url(
+                redis_url_with_password, decode_responses=True)
         else:
-            self.redis_pool = redis.from_url(redis_url_str, decode_responses=True)
+            self.redis_pool = redis.from_url(
+                redis_url_str, decode_responses=True)
 
         # Load existing data from Redis on startup
-        asyncio.create_task(self.load_from_redis()) # Schedule the async load
+        asyncio.create_task(self.load_from_redis())  # Schedule the async load
         # Start cleanup thread (optional, can rely on TTL mostly)
         self.cleanup_thread = threading.Thread(
             target=self.cleanup_old_monitors, daemon=True)
@@ -86,7 +96,8 @@ class RestaurantMonitor:
                     if len(parts) == 2:
                         venue_title, restaurant_name = parts
                         # Get coordinates
-                        lat, lon = self.venue_coordinates.get(venue_identifier, (0.0, 0.0))
+                        lat, lon = self.venue_coordinates.get(
+                            venue_identifier, (0.0, 0.0))
                         # Create a unique key for this user-venue combination
                         key = f"{user_id}_{venue_title}_{restaurant_name}"
                         monitors_data[key] = json.dumps({
@@ -111,7 +122,8 @@ class RestaurantMonitor:
         if monitors_data:
             pipe = self.redis_pool.pipeline()
             pipe.hset(REDIS_MONITOR_KEY, mapping=monitors_data)
-            pipe.expire(REDIS_MONITOR_KEY, REDIS_MAX_MONITOR_TTL) # Set TTL for the entire hash
+            # Set TTL for the entire hash
+            pipe.expire(REDIS_MONITOR_KEY, REDIS_MAX_MONITOR_TTL)
             await pipe.execute()
 
         if user_locations_data:
@@ -162,7 +174,7 @@ class RestaurantMonitor:
 
                 except (json.JSONDecodeError, KeyError, ValueError) as e:
                     print(f"Error loading monitor entry '{key}': {e}")
-                    continue # Skip invalid entries
+                    continue  # Skip invalid entries
 
             # Load user locations
             user_locations_data_raw = await self.redis_pool.hgetall(REDIS_USER_LOCATIONS_KEY)
@@ -172,12 +184,14 @@ class RestaurantMonitor:
                     user_id = int(user_id_str)
                     lat = location_info['lat']
                     lon = location_info['lon']
-                    location_name = location_info.get('location_name', f"{lat}, {lon}")
+                    location_name = location_info.get(
+                        'location_name', f"{lat}, {lon}")
                     self.user_locations[user_id] = (lat, lon)
                     self.user_location_names[user_id] = location_name
                 except (json.JSONDecodeError, ValueError, KeyError) as e:
-                    print(f"Error loading user location entry '{user_id_str}': {e}")
-                    continue # Skip invalid entries
+                    print(
+                        f"Error loading user location entry '{user_id_str}': {e}")
+                    continue  # Skip invalid entries
 
         except Exception as e:
             print(f"Error loading from Redis: {e}")
@@ -186,7 +200,8 @@ class RestaurantMonitor:
         """Get user's location, default if not set"""
         if user_id in self.user_locations:
             return self.user_locations[user_id]
-        return (Constants.DEFAULT_LAT, Constants.DEFAULT_LON)  # Default location
+        # Default location
+        return (Constants.DEFAULT_LAT, Constants.DEFAULT_LON)
 
     def get_user_location_name(self, user_id: int) -> str:
         """Get user's location name, default if not set"""
@@ -232,7 +247,6 @@ class RestaurantMonitor:
 
             except Exception as e:
                 print(f"Error during cleanup: {e}")
-
 
     async def geocode_location(self, location_query: str) -> Optional[tuple]:
         """
@@ -397,7 +411,8 @@ class RestaurantMonitor:
                     f"Status changed for {venue_title}: {current_status} -> {new_status}")
 
                 if new_status == "Online" and current_status == "Temporarily offline":
-                    users_to_notify = self.monitoring_users[venue_identifier].copy()
+                    users_to_notify = self.monitoring_users[venue_identifier].copy(
+                    )
                     for uid in users_to_notify:
                         try:
                             await self.send_safe_message(uid, f"🎉 Good news! '{venue_title}' is now available for ordering!")
@@ -650,7 +665,8 @@ async def stopall_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Stop monitoring for all venues for this user
         venues_to_stop = monitored_venues.copy()
         for venue_identifier in venues_to_stop:
-            await restaurant_monitor.stop_monitoring(venue_identifier, user_id) # Make async call
+            # Make async call
+            await restaurant_monitor.stop_monitoring(venue_identifier, user_id)
 
         await update.message.reply_text(
             f"✅ Successfully stopped monitoring for {len(venues_to_stop)} restaurant(s).",
@@ -695,7 +711,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lat, lon = coords
                 # Get the display name for the location
                 location_name = await restaurant_monitor.reverse_geocode_location(lat, lon)
-                await restaurant_monitor.set_user_location( # Make async call
+                await restaurant_monitor.set_user_location(  # Make async call
                     user_id, lat, lon, location_name)
                 await update.message.reply_text(
                     f"✅ Location updated to: {location_name}\n\n"
@@ -786,7 +802,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Stop monitoring for all venues for this user
             venues_to_stop = monitored_venues.copy()
             for venue_identifier in venues_to_stop:
-                await restaurant_monitor.stop_monitoring(venue_identifier, user_id) # Make async call
+                # Make async call
+                await restaurant_monitor.stop_monitoring(venue_identifier, user_id)
 
             await update.message.reply_text(
                 f"✅ Successfully stopped monitoring for {len(venues_to_stop)} restaurant(s).",
@@ -899,7 +916,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            await restaurant_monitor.start_monitoring( # Make async call
+            await restaurant_monitor.start_monitoring(  # Make async call
                 venue_title, restaurant_name, lat, lon, venue_status, user_id
             )
 
@@ -916,9 +933,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Error in button_callback: {e}")
 
+
 async def cleanup_redis():
     """Async function to close the Redis connection pool."""
     await restaurant_monitor.redis_pool.aclose()
+
 
 async def run_bot():
     """Encapsulate the bot running logic."""
@@ -951,12 +970,14 @@ async def run_bot():
         await application.run_polling(stop_event=stop_event)
     finally:
         print("Bot shutting down...")
-        await cleanup_redis() # Close Redis connection pool
+        await cleanup_redis()  # Close Redis connection pool
+
 
 def main():
     """Main entry point."""
     # Use asyncio.run to run the async main logic
     asyncio.run(run_bot())
+
 
 if __name__ == "__main__":
     main()
