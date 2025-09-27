@@ -939,7 +939,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    application = Application.builder().token(os.environ['BOT_TOKEN']).build()
+    print(list(os.environ))
+    token = os.environ.get('BOT_TOKEN')
+    if token is None:
+        print("Error: BOT_TOKEN environment variable not set.")
+        return
+    
+    application = Application.builder().token(os.environ.get('BOT_TOKEN')).build()
 
     # Set the bot instance for the monitor
     restaurant_monitor.bot_instance = application.bot
